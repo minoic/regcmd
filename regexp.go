@@ -1,4 +1,4 @@
-package main
+package regcmd
 
 import (
 	"bufio"
