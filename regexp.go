@@ -63,8 +63,7 @@ func (this *manager) listen(stream io.Reader) {
 		var input string
 		b, _, _ := reader.ReadLine()
 		input = string(b)
-		if len(input) == 1 {
-			fmt.Println("unknown command")
+		if len(input) == 0 {
 			continue
 		}
 		err := this.handle(input)
