@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // register a command
@@ -37,6 +38,7 @@ type manager struct {
 var (
 	instance manager
 	helper   = make(map[string][]*command)
+	once     sync.Once
 )
 
 func (this *manager) register(re string, names []string, handler func(args []string) string) {
@@ -74,7 +76,7 @@ func (this *manager) register(re string, names []string, handler func(args []str
 	sort.Slice(helper[splts[0]], func(i, j int) bool {
 		return len(helper[splts[0]][i].Desc) > len(helper[splts[0]][j].Desc)
 	})
-	if len(helper[splts[0]]) == 1 {
+	if splts[0] != "help" && len(helper[splts[0]]) == 1 {
 		instance.register(splts[0]+" help", []string{"To get this help"}, func(args []string) string {
 			fmt.Printf("---- %s help ----\n", splts[0])
 			var buf bytes.Buffer
@@ -91,6 +93,27 @@ func (this *manager) register(re string, names []string, handler func(args []str
 				buf.Reset()
 			}
 			return ""
+		})
+		once.Do(func() {
+			instance.register("help", []string{"To get all commands help"}, func(args []string) string {
+				fmt.Println("---- all commands help ----")
+				for k, _ := range helper {
+					var buf bytes.Buffer
+					for _, c := range helper[k] {
+						buf.WriteString(c.Desc)
+						if len(c.Intro) != 0 {
+							for i := 1; i <= len(helper[k][0].Desc)-len(c.Desc); i++ {
+								buf.WriteByte(' ')
+							}
+							buf.WriteString("// ")
+							buf.WriteString(c.Intro)
+						}
+						fmt.Println(buf.String())
+						buf.Reset()
+					}
+				}
+				return ""
+			})
 		})
 	}
 	if this == nil {
@@ -116,7 +139,7 @@ func (this *manager) handle(input string) string {
 	if _, ok := helper[s]; ok {
 		return fmt.Sprintf("Type <%s help> for more help", s)
 	}
-	return "Invalid command: " + input
+	return "Invalid command: " + input + ` **Type <help> for commands help`
 }
 
 func (this *manager) listen(stream io.Reader) {
