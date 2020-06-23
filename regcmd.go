@@ -73,9 +73,6 @@ func (this *manager) register(re string, names []string, handler func(args []str
 		c.Intro = names[count]
 	}
 	helper[splts[0]] = append(helper[splts[0]], &c)
-	sort.Slice(helper[splts[0]], func(i, j int) bool {
-		return len(helper[splts[0]][i].Desc) > len(helper[splts[0]][j].Desc)
-	})
 	if splts[0] != "help" && len(helper[splts[0]]) == 1 {
 		instance.register(splts[0]+" help", []string{"To get this help"}, func(args []string) string {
 			fmt.Printf("---- %s help ----\n", splts[0])
@@ -143,6 +140,11 @@ func (this *manager) handle(input string) string {
 }
 
 func (this *manager) listen(stream io.Reader) {
+	for k := range helper {
+		sort.Slice(helper[k], func(i, j int) bool {
+			return len(helper[k][i].Desc) > len(helper[k][j].Desc)
+		})
+	}
 	reader := bufio.NewReader(stream)
 	for {
 		var input string
