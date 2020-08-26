@@ -14,7 +14,7 @@ import (
 // register a command
 // re eg. `command (.*) flag (.*)`
 // handler: args:the params matched by re
-func Register(re string, names []string, handler func(args []string) string) {
+func Register(re string, names []string, handler func(args []string)) {
 	instance.register(re, names, handler)
 }
 
@@ -28,7 +28,7 @@ type command struct {
 	Re      *regexp.Regexp
 	Desc    string
 	Intro   string
-	Handler func(args []string) string
+	Handler func(args []string)
 }
 
 type manager struct {
@@ -41,7 +41,7 @@ var (
 	once     sync.Once
 )
 
-func (this *manager) register(re string, names []string, handler func(args []string) string) {
+func (this *manager) register(re string, names []string, handler func(args []string)) {
 	rec, err := regexp.Compile(re)
 	if err != nil {
 		panic(re + err.Error())
@@ -74,7 +74,7 @@ func (this *manager) register(re string, names []string, handler func(args []str
 	}
 	helper[splts[0]] = append(helper[splts[0]], &c)
 	if splts[0] != "help" && len(helper[splts[0]]) == 1 {
-		instance.register(splts[0]+" help", []string{"To get this help"}, func(args []string) string {
+		instance.register(splts[0]+" help", []string{"To get this help"}, func(args []string) {
 			fmt.Printf("---- %s help ----\n", splts[0])
 			var buf bytes.Buffer
 			for _, c := range helper[splts[0]] {
@@ -89,10 +89,9 @@ func (this *manager) register(re string, names []string, handler func(args []str
 				fmt.Println(buf.String())
 				buf.Reset()
 			}
-			return ""
 		})
 		once.Do(func() {
-			instance.register("help", []string{"To get all commands help"}, func(args []string) string {
+			instance.register("help", []string{"To get all commands help"}, func(args []string) {
 				fmt.Println("---- all commands help ----")
 				for k, _ := range helper {
 					var buf bytes.Buffer
@@ -109,7 +108,6 @@ func (this *manager) register(re string, names []string, handler func(args []str
 						buf.Reset()
 					}
 				}
-				return ""
 			})
 		})
 	}
@@ -123,7 +121,8 @@ func (this *manager) register(re string, names []string, handler func(args []str
 func (this *manager) handle(input string) string {
 	for _, c := range this.C {
 		if args := c.Re.FindStringSubmatch(input); len(args)-1 == c.Re.NumSubexp() {
-			return c.Handler(args[1:])
+			c.Handler(args[1:])
+			return ""
 		}
 	}
 	index := strings.IndexByte(input, ' ')
