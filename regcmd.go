@@ -3,6 +3,7 @@ package regcmd
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -12,20 +13,28 @@ import (
 )
 
 // register a command
-// re eg. `command (.*) flag (.*)`
+//
+// re: eg. `command (.*) flag (.*)`
+//
+// names: if you have n arguments in re, you should have n names at least.
+// In additional, if you have n+1 names ,the last one will be the introduction of this command
+//
 // handler: args:the params matched by re
-func Register(re string, names []string, handler func(args []string)) {
-	instance.register(re, names, handler)
+func Register(re string, names []string, handler func(args []string)) error {
+	return instance.register(re, names, handler)
 }
 
 // listen io.Reader and will block the routine
 // Normally it can be os.Stdin
+//
+// example: go regcmd.Listen(os.Stdin)
 func Listen(stream io.Reader) {
 	instance.listen(stream)
 }
 
 type command struct {
 	Re      *regexp.Regexp
+	Words   int
 	Desc    string
 	Intro   string
 	Handler func(args []string)
@@ -41,13 +50,13 @@ var (
 	once     sync.Once
 )
 
-func (this *manager) register(re string, names []string, handler func(args []string)) {
+func (this *manager) register(re string, names []string, handler func(args []string)) error {
 	rec, err := regexp.Compile(re)
 	if err != nil {
-		panic(re + err.Error())
+		return errors.New(re + err.Error())
 	}
 	if len(names) < rec.NumSubexp() {
-		panic(re + " not enough names for parenthesized subexpressions in this Regexp")
+		return errors.New(re + " not enough names for parenthesized subexpressions in this Regexp")
 	}
 	splts := strings.Split(re, " ")
 	var buf bytes.Buffer
@@ -66,6 +75,7 @@ func (this *manager) register(re string, names []string, handler func(args []str
 	}
 	c := command{
 		Re:      rec,
+		Words:   len(splts),
 		Desc:    buf.String(),
 		Handler: handler,
 	}
@@ -74,7 +84,7 @@ func (this *manager) register(re string, names []string, handler func(args []str
 	}
 	helper[splts[0]] = append(helper[splts[0]], &c)
 	if splts[0] != "help" && len(helper[splts[0]]) == 1 {
-		instance.register(splts[0]+" help", []string{"To get this help"}, func(args []string) {
+		_ = instance.register(splts[0]+" help", []string{"To get this help"}, func(args []string) {
 			fmt.Printf("---- %s help ----\n", splts[0])
 			var buf bytes.Buffer
 			for _, c := range helper[splts[0]] {
@@ -91,7 +101,7 @@ func (this *manager) register(re string, names []string, handler func(args []str
 			}
 		})
 		once.Do(func() {
-			instance.register("help", []string{"To get all commands help"}, func(args []string) {
+			_ = instance.register("help", []string{"To get all commands help"}, func(args []string) {
 				fmt.Println("---- all commands help ----")
 				for k, _ := range helper {
 					var buf bytes.Buffer
@@ -116,10 +126,15 @@ func (this *manager) register(re string, names []string, handler func(args []str
 	} else {
 		this.C = append(this.C, c)
 	}
+	return nil
 }
 
 func (this *manager) handle(input string) string {
+	splts := strings.Split(input, " ")
 	for _, c := range this.C {
+		if c.Words != len(splts) {
+			continue
+		}
 		if args := c.Re.FindStringSubmatch(input); len(args)-1 == c.Re.NumSubexp() {
 			c.Handler(args[1:])
 			return ""
