@@ -3,6 +3,7 @@ package regcmd
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -10,9 +11,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
-// register a command
+// Register register a command
 //
 // re: eg. `command (.*) flag (.*)`
 //
@@ -20,28 +22,62 @@ import (
 // In additional, if you have n+1 names ,the last one will be the introduction of this command
 //
 // handler: args:the params matched by re
-func Register(re string, names []string, handler func(args []string)) error {
-	return instance.register(re, names, handler)
+func Register(re string, names []string, handler ...Handler) error {
+	return instance.register(re, names, handler...)
 }
 
-// listen io.Reader and will block the routine
+// Listen listen io.Reader and will block the routine
 // Normally it can be os.Stdin
 //
 // example: go regcmd.Listen(os.Stdin)
-func Listen(stream io.Reader) {
-	instance.listen(stream)
+func Listen(stream io.Reader, optfuncs ...CommandOption) {
+	instance.listen(stream, optfuncs...)
 }
 
 type command struct {
-	Re      *regexp.Regexp
-	Words   int
-	Desc    string
-	Intro   string
-	Handler func(args []string)
+	Re       *regexp.Regexp
+	Words    int
+	Desc     string
+	Intro    string
+	Handlers []Handler
 }
 
 type manager struct {
-	C []command
+	rwLock   sync.RWMutex
+	commands []command
+	opts     options
+	optfuncs []CommandOption
+}
+
+type Handler func(ctx *Context, args []string)
+
+type Context struct {
+	c       context.Context
+	aborted bool
+}
+
+func (c Context) Deadline() (deadline time.Time, ok bool) {
+	return c.c.Deadline()
+}
+
+func (c Context) Done() <-chan struct{} {
+	return c.c.Done()
+}
+
+func (c Context) Err() error {
+	return c.c.Err()
+}
+
+func (c Context) Value(key interface{}) interface{} {
+	return c.c.Value(key)
+}
+
+func (c Context) Set(key, value interface{}) {
+	c.c = context.WithValue(c.c, key, value)
+}
+
+func (c Context) Abort() {
+	c.aborted = true
 }
 
 var (
@@ -50,7 +86,7 @@ var (
 	once     sync.Once
 )
 
-func (this *manager) register(re string, names []string, handler func(args []string)) error {
+func (this *manager) register(re string, names []string, handler ...Handler) error {
 	rec, err := regexp.Compile(re)
 	if err != nil {
 		return errors.New(re + err.Error())
@@ -74,18 +110,18 @@ func (this *manager) register(re string, names []string, handler func(args []str
 		}
 	}
 	c := command{
-		Re:      rec,
-		Words:   len(splts),
-		Desc:    buf.String(),
-		Handler: handler,
+		Re:       rec,
+		Words:    len(splts),
+		Desc:     buf.String(),
+		Handlers: handler,
 	}
 	if count < len(names) {
 		c.Intro = names[count]
 	}
 	helper[splts[0]] = append(helper[splts[0]], &c)
 	if splts[0] != "help" && len(helper[splts[0]]) == 1 {
-		_ = instance.register(splts[0]+" help", []string{"To get this help"}, func(args []string) {
-			fmt.Printf("---- %s help ----\n", splts[0])
+		err = instance.register(splts[0]+" help", []string{"To get this help"}, func(ctx *Context, args []string) {
+			this.opts.loggerFunc(fmt.Sprintf("---- %s help ----\n", splts[0]))
 			var buf bytes.Buffer
 			for _, c := range helper[splts[0]] {
 				buf.WriteString(c.Desc)
@@ -96,13 +132,16 @@ func (this *manager) register(re string, names []string, handler func(args []str
 					buf.WriteString("// ")
 					buf.WriteString(c.Intro)
 				}
-				fmt.Println(buf.String())
+				this.opts.loggerFunc(buf.String())
 				buf.Reset()
 			}
 		})
+		if err != nil {
+			return err
+		}
 		once.Do(func() {
-			_ = instance.register("help", []string{"To get all commands help"}, func(args []string) {
-				fmt.Println("---- all commands help ----")
+			err = instance.register("help", []string{"To get all commands help"}, func(ctx *Context, args []string) {
+				this.opts.loggerFunc("---- all commands help ----")
 				for k, _ := range helper {
 					var buf bytes.Buffer
 					for _, c := range helper[k] {
@@ -114,29 +153,43 @@ func (this *manager) register(re string, names []string, handler func(args []str
 							buf.WriteString("// ")
 							buf.WriteString(c.Intro)
 						}
-						fmt.Println(buf.String())
+						this.opts.loggerFunc(buf.String())
 						buf.Reset()
 					}
 				}
 			})
+			if err != nil {
+				panic(err)
+			}
 		})
 	}
+	this.rwLock.Lock()
 	if this == nil {
-		this.C = append([]command{}, c)
+		this.commands = append([]command{}, c)
 	} else {
-		this.C = append(this.C, c)
+		this.commands = append(this.commands, c)
 	}
+	this.rwLock.Unlock()
 	return nil
 }
 
 func (this *manager) handle(input string) string {
 	splts := strings.Split(input, " ")
-	for _, c := range this.C {
+	for _, c := range this.commands {
 		if c.Words != len(splts) {
 			continue
 		}
+		ctx := &Context{
+			c:       this.opts.contextGenFunc(),
+			aborted: false,
+		}
 		if args := c.Re.FindStringSubmatch(input); len(args)-1 == c.Re.NumSubexp() {
-			c.Handler(args[1:])
+			for i := range c.Handlers {
+				c.Handlers[i](ctx, args[1:])
+				if ctx.aborted {
+					return ""
+				}
+			}
 			return ""
 		}
 	}
@@ -153,7 +206,13 @@ func (this *manager) handle(input string) string {
 	return "Invalid command: " + input + ` **Type <help> for commands help`
 }
 
-func (this *manager) listen(stream io.Reader) {
+func (this *manager) listen(stream io.Reader, optfuncs ...CommandOption) {
+	for i := range defaultOptions {
+		defaultOptions[i](&this.opts)
+	}
+	for i := range optfuncs {
+		optfuncs[i](&this.opts)
+	}
 	for k := range helper {
 		sort.Slice(helper[k], func(i, j int) bool {
 			return len(helper[k][i].Desc) > len(helper[k][j].Desc)
@@ -168,7 +227,7 @@ func (this *manager) listen(stream io.Reader) {
 			continue
 		}
 		if ret := this.handle(input); len(ret) != 0 {
-			fmt.Println(ret)
+			this.opts.loggerFunc(ret)
 		}
 	}
 }
