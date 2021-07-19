@@ -10,36 +10,68 @@
 package main
 
 import (
+    "context"
     "fmt"
     "github.com/MinoIC/regcmd"
+    "math/rand"
     "os"
+    "time"
 )
 
-func main(){
-    _ = regcmd.Register("show",[]string{"say hello world"}, func(args []string) {
+func main() {
+    regcmd.ShouldRegister("show", []string{"say hello world"}, func(ctx *regcmd.Context, args []string) {
         fmt.Println("hello world")
     })
-    _ = regcmd.Register("show (.*)",[]string{"user","say hello to the given user name"}, func(args []string) {
-        fmt.Println("hello",args[0])
+    regcmd.ShouldRegister("show (.*)", []string{"user", "say hello to the given user name"}, func(ctx *regcmd.Context, args []string) {
+        fmt.Println("hello", args[0])
     })
-    regcmd.Listen(os.Stdin)
+    err := regcmd.Register("sleep", []string{}, func(ctx *regcmd.Context, args []string) {
+        id := rand.Int()
+        fmt.Println(id, "starts to sleep")
+        time.Sleep(5 * time.Second)
+        fmt.Println(id, "sleeped 5 seconds")
+    })
+    if err != nil {
+        fmt.Println(err)
+    }
+    regcmd.Listen(os.Stdin, regcmd.WithPoolSize(2),
+        regcmd.WithLoggerFunc(func(s string) {
+            fmt.Println("log: ", s)
+        }),
+        regcmd.WithContextGeneration(func() context.Context {
+            return context.Background()
+        }),
+    )
 }
 ```
 
-运行以上代码，可以经由控制台完成一些简单的指令，结果如下图。其中 `? ` `help` `show` `show minoic` 为用户的输入，regcmd 对每一条指令给出了应答。
+运行以上代码，可以经由控制台完成一些简单的指令，结果如下图。
 
-```
-?
-Invalid command: ? **Type <help> for commands help
+```bash
+s
+log:  Invalid command: s **Type <help> for commands help
 help
----- all commands help ----
-help // To get all commands help
-show <user> // say hello to the given user name
-show help   // To get this help
-show        // say hello world
-show
-hello world
-show minoic
-hello minoic
+log:  ---- all commands help ----
+log:  sleep help // To get this help
+log:  sleep 
+log:  show <user> // say hello to the given user name
+log:  show help   // To get this help
+log:  show        // say hello world
+log:  help // To get all commands help
+sleep
+5577006791947779410 starts to sleep
+5577006791947779410 sleeped 5 seconds
+sleep
+8674665223082153551 starts to sleep
+sleep
+6129484611666145821 starts to sleep
+sleep
+sleep
+8674665223082153551 sleeped 5 seconds
+4037200794235010051 starts to sleep
+6129484611666145821 sleeped 5 seconds
+3916589616287113937 starts to sleep
+4037200794235010051 sleeped 5 seconds
+3916589616287113937 sleeped 5 seconds
 ```
 
