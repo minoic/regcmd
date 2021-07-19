@@ -8,6 +8,7 @@ import (
 type options struct {
 	loggerFunc     func(s string)
 	contextGenFunc func() context.Context
+	pool           chan struct{}
 }
 
 type CommandOption func(o *options)
@@ -24,6 +25,12 @@ func WithLoggerFunc(lf func(s string)) CommandOption {
 	}
 }
 
+func WithPoolSize(psize uint) CommandOption {
+	return func(o *options) {
+		o.pool = make(chan struct{}, psize)
+	}
+}
+
 var defaultOptions []CommandOption = []CommandOption{
 	WithLoggerFunc(func(s string) {
 		fmt.Print(s)
@@ -31,4 +38,5 @@ var defaultOptions []CommandOption = []CommandOption{
 	WithContextGeneration(func() context.Context {
 		return context.Background()
 	}),
+	WithPoolSize(1),
 }

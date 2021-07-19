@@ -26,6 +26,14 @@ func Register(re string, names []string, handler ...Handler) error {
 	return instance.register(re, names, handler...)
 }
 
+// ShouldRegister registers a command and will panic while an error received
+func ShouldRegister(re string, names []string, handler ...Handler) {
+	err := instance.register(re, names, handler...)
+	if err != nil {
+		panic(err)
+	}
+}
+
 // Listen listen io.Reader and will block the routine
 // Normally it can be os.Stdin
 //
@@ -35,11 +43,11 @@ func Listen(stream io.Reader, optfuncs ...CommandOption) {
 }
 
 type command struct {
-	Re       *regexp.Regexp
-	Words    int
-	Desc     string
-	Intro    string
-	Handlers []Handler
+	re       *regexp.Regexp
+	words    int
+	desc     string
+	intro    string
+	handlers []Handler
 }
 
 type manager struct {
@@ -110,13 +118,13 @@ func (this *manager) register(re string, names []string, handler ...Handler) err
 		}
 	}
 	c := command{
-		Re:       rec,
-		Words:    len(splts),
-		Desc:     buf.String(),
-		Handlers: handler,
+		re:       rec,
+		words:    len(splts),
+		desc:     buf.String(),
+		handlers: handler,
 	}
 	if count < len(names) {
-		c.Intro = names[count]
+		c.intro = names[count]
 	}
 	helper[splts[0]] = append(helper[splts[0]], &c)
 	if splts[0] != "help" && len(helper[splts[0]]) == 1 {
@@ -124,13 +132,13 @@ func (this *manager) register(re string, names []string, handler ...Handler) err
 			this.opts.loggerFunc(fmt.Sprintf("---- %s help ----\n", splts[0]))
 			var buf bytes.Buffer
 			for _, c := range helper[splts[0]] {
-				buf.WriteString(c.Desc)
-				if len(c.Intro) != 0 {
-					for i := 1; i <= len(helper[splts[0]][0].Desc)-len(c.Desc); i++ {
+				buf.WriteString(c.desc)
+				if len(c.intro) != 0 {
+					for i := 1; i <= len(helper[splts[0]][0].desc)-len(c.desc); i++ {
 						buf.WriteByte(' ')
 					}
 					buf.WriteString("// ")
-					buf.WriteString(c.Intro)
+					buf.WriteString(c.intro)
 				}
 				this.opts.loggerFunc(buf.String())
 				buf.Reset()
@@ -145,13 +153,13 @@ func (this *manager) register(re string, names []string, handler ...Handler) err
 				for k, _ := range helper {
 					var buf bytes.Buffer
 					for _, c := range helper[k] {
-						buf.WriteString(c.Desc)
-						if len(c.Intro) != 0 {
-							for i := 1; i <= len(helper[k][0].Desc)-len(c.Desc); i++ {
+						buf.WriteString(c.desc)
+						if len(c.intro) != 0 {
+							for i := 1; i <= len(helper[k][0].desc)-len(c.desc); i++ {
 								buf.WriteByte(' ')
 							}
 							buf.WriteString("// ")
-							buf.WriteString(c.Intro)
+							buf.WriteString(c.intro)
 						}
 						this.opts.loggerFunc(buf.String())
 						buf.Reset()
@@ -176,16 +184,16 @@ func (this *manager) register(re string, names []string, handler ...Handler) err
 func (this *manager) handle(input string) string {
 	splts := strings.Split(input, " ")
 	for _, c := range this.commands {
-		if c.Words != len(splts) {
+		if c.words != len(splts) {
 			continue
 		}
 		ctx := &Context{
 			c:       this.opts.contextGenFunc(),
 			aborted: false,
 		}
-		if args := c.Re.FindStringSubmatch(input); len(args)-1 == c.Re.NumSubexp() {
-			for i := range c.Handlers {
-				c.Handlers[i](ctx, args[1:])
+		if args := c.re.FindStringSubmatch(input); len(args)-1 == c.re.NumSubexp() {
+			for i := range c.handlers {
+				c.handlers[i](ctx, args[1:])
 				if ctx.aborted {
 					return ""
 				}
@@ -215,7 +223,7 @@ func (this *manager) listen(stream io.Reader, optfuncs ...CommandOption) {
 	}
 	for k := range helper {
 		sort.Slice(helper[k], func(i, j int) bool {
-			return len(helper[k][i].Desc) > len(helper[k][j].Desc)
+			return len(helper[k][i].desc) > len(helper[k][j].desc)
 		})
 	}
 	reader := bufio.NewReader(stream)
@@ -226,8 +234,14 @@ func (this *manager) listen(stream io.Reader, optfuncs ...CommandOption) {
 		if len(input) == 0 {
 			continue
 		}
-		if ret := this.handle(input); len(ret) != 0 {
-			this.opts.loggerFunc(ret)
-		}
+		this.opts.pool <- struct{}{}
+		go func() {
+			defer func() {
+				<-this.opts.pool
+			}()
+			if ret := this.handle(input); len(ret) != 0 {
+				this.opts.loggerFunc(ret)
+			}
+		}()
 	}
 }
