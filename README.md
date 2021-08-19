@@ -12,7 +12,7 @@ package main
 import (
     "context"
     "fmt"
-    "github.com/MinoIC/regcmd"
+    "github.com/minoic/regcmd"
     "math/rand"
     "os"
     "time"
