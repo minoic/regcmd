@@ -33,7 +33,7 @@ func WithPoolSize(psize uint) CommandOption {
 
 var defaultOptions []CommandOption = []CommandOption{
 	WithLoggerFunc(func(s string) {
-		fmt.Print(s)
+		fmt.Println("regcmd: ", s)
 	}),
 	WithContextGeneration(func() context.Context {
 		return context.Background()
