@@ -226,22 +226,21 @@ func (this *manager) listen(stream io.Reader, optfuncs ...CommandOption) {
 			return len(helper[k][i].desc) > len(helper[k][j].desc)
 		})
 	}
-	reader := bufio.NewReader(stream)
+	bufReader := bufio.NewReader(stream)
 	for {
-		var input string
-		b, _, _ := reader.ReadLine()
-		input = string(b)
-		if len(input) == 0 {
-			continue
-		}
-		this.opts.pool <- struct{}{}
-		go func() {
-			defer func() {
-				<-this.opts.pool
+		b, _, _ := bufReader.ReadLine()
+		if len(b) != 0 {
+			this.opts.pool <- struct{}{}
+			go func() {
+				defer func() {
+					<-this.opts.pool
+				}()
+				if ret := this.handle(string(b)); len(ret) != 0 {
+					this.opts.loggerFunc(ret)
+				}
 			}()
-			if ret := this.handle(input); len(ret) != 0 {
-				this.opts.loggerFunc(ret)
-			}
-		}()
+		} else {
+			time.Sleep(200 * time.Millisecond)
+		}
 	}
 }
