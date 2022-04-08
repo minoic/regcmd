@@ -17,7 +17,7 @@ func main() {
 		fmt.Println("hello", args[0])
 	})
 	err := regcmd.Register("sleep", []string{}, func(ctx *regcmd.Context, args []string) {
-		id := rand.Int()
+		id := rand.Int() % 10000
 		fmt.Println(id, "starts to sleep")
 		time.Sleep(5 * time.Second)
 		fmt.Println(id, "sleeped 5 seconds")

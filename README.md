@@ -52,26 +52,22 @@ s
 log:  Invalid command: s **Type <help> for commands help
 help
 log:  ---- all commands help ----
-log:  sleep help // To get this help
-log:  sleep 
 log:  show <user> // say hello to the given user name
 log:  show help   // To get this help
 log:  show        // say hello world
 log:  help // To get all commands help
+log:  sleep help // To get this help
+log:  sleep 
+show 
+hello 
 sleep
-5577006791947779410 starts to sleep
-5577006791947779410 sleeped 5 seconds
+9410 starts to sleep
 sleep
-8674665223082153551 starts to sleep
+3551 starts to sleep
 sleep
-6129484611666145821 starts to sleep
-sleep
-sleep
-8674665223082153551 sleeped 5 seconds
-4037200794235010051 starts to sleep
-6129484611666145821 sleeped 5 seconds
-3916589616287113937 starts to sleep
-4037200794235010051 sleeped 5 seconds
-3916589616287113937 sleeped 5 seconds
+9410 sleeped 5 seconds
+5821 starts to sleep
+3551 sleeped 5 seconds
+5821 sleeped 5 seconds
 ```
 
